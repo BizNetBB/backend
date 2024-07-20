@@ -1,0 +1,83 @@
+version: '3.8'
+
+services:
+  database:
+    image: postgres:latest
+    container_name: database
+    environment:
+      POSTGRES_DB: biznetbb-db
+      POSTGRES_USER: biznetbb
+      POSTGRES_PASSWORD: admin
+    ports:
+      - "5432:5432"
+    networks:
+      - biznetbb-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U biznetbb"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  registry-service:
+    build:
+      context: ./src/registry-service
+    container_name: registry-service
+    ports:
+      - "8761:8761"
+    depends_on:
+      - database
+    networks:
+      - biznetbb-network
+    environment:
+      EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: "http://registry-service:8761/eureka/"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8761/actuator/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    command: ["sh", "-c", "echo 'Registry Service ready to start' && tail -f /dev/null"]
+
+  gateway-service:
+    build:
+      context: ./src/gateway-service
+    container_name: gateway-service
+    ports:
+      - "8080:8080"
+    depends_on:
+      - registry-service
+    networks:
+      - biznetbb-network
+    environment:
+      EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: "http://registry-service:8761/eureka/"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/actuator/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    command: ["sh", "-c", "echo 'Gateway Service ready to start' && tail -f /dev/null"]
+
+  auth-service:
+    build:
+      context: ./src/auth-service
+    container_name: auth-service
+    ports:
+      - "8081:8081"
+    depends_on:
+      - registry-service
+    networks:
+      - biznetbb-network
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:postgresql://database:5432/biznetbb-db
+      SPRING_DATASOURCE_USERNAME: biznetbb
+      SPRING_DATASOURCE_PASSWORD: admin
+      EUREKA_CLIENT_SERVICEURL_DEFAULTZONE: "http://registry-service:8761/eureka/"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8081/actuator/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    command: ["sh", "-c", "echo 'Auth Service ready to start' && tail -f /dev/null"]
+
+networks:
+  biznetbb-network:
+    driver: bridge
